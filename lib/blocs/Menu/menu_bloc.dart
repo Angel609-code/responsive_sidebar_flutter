@@ -18,6 +18,7 @@ class MenuBloc extends Bloc<MenuEvent, MenuState> {
     on<UpdateMenuEvent>((event, emit) async {
       emit(MenuLoadingState());
       var username = 'admin';
+
       List<MenuModel> response = await menuService.obtenerMenu(username: username, filterMenu: event.searchMenu);
       emit(MenuSuccessState(response, filter: event.filter));
     });

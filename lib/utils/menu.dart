@@ -61,19 +61,13 @@ TreeNode<MenuModel> createNode(MenuModel item) {
   );
 }
 
-/// Método que crea un nodo a partir de un MenuModel
-TreeNode<MenuModel> createNodeMap(MenuModel item, nodeMap) {
-  var newNode = createNode(item);
-  nodeMap[item.id] = newNode;
-  return newNode;
-}
-
 /// Método recursivo que llena los nodos por cada elemento del sub elemento principal del menu
 void setChilds(int parentId, List<MenuModel> menuData, Map<int, TreeNode<MenuModel>> nodeMap) {
   for (var item in menuData.where((item) => item.menuId == parentId)) {
     var parentNode = nodeMap[parentId];
     if (parentNode != null) {
-      var childNode = createNodeMap(item, nodeMap);
+      var childNode = createNode(item);
+      nodeMap[item.id] = childNode;
       parentNode.add(childNode);
       setChilds(item.id, menuData, nodeMap);
     }

@@ -11,9 +11,6 @@ class MenuService extends IMenuService {
   @override
   Future<dynamic> obtenerMenu({required String username, required String filterMenu}) async {
     try {
-      // var headers = {
-      //   'Authorization': 'Bearer 2ZK3PRmpM80c9TMXlYVFtVAE6qo_MoumkPXZhA5ub4Yw3QSJ'
-      // };
       final dio = Dio();
 
       var response = await dio.request(
@@ -26,6 +23,7 @@ class MenuService extends IMenuService {
 
       if (response.statusCode == 200) {
         List<MenuModel> menuData = (response.data as List).map((e) => MenuModel.fromJson(e)).toList();
+
         return menuData;
       }
       return [];

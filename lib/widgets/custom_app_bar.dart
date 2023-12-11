@@ -5,10 +5,12 @@ import '../constants/color_constants.dart';
 
 class CustomAppBar extends AppBar {
   final bool isExpanded;
+  final bool isMobile;
   final VoidCallback onToggleMenu;
 
   CustomAppBar({
     super.key,
+    required this.isMobile,
     required this.isExpanded,
     required this.onToggleMenu,
   });
@@ -26,12 +28,7 @@ class _CustomAppBarState extends State<CustomAppBar> {
         backgroundColor: ColorConstants.secondaryText,
         elevation: 1,
         centerTitle: true,
-        leading: IconButton(
-          icon: Icon(
-              widget.isExpanded ? Icons.chevron_left : Icons.chevron_right,
-              color: ColorConstants.primary),
-          onPressed: widget.onToggleMenu,
-        ),
+        leading: _disapearingMenu(),
         title: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
@@ -59,6 +56,27 @@ class _CustomAppBarState extends State<CustomAppBar> {
           )
         ],
       ),
+    );
+  }
+
+  Widget _disapearingMenu() {
+    if (widget.isMobile){
+      return IconButton(
+        icon: const Icon(
+          Icons.menu,
+          color: ColorConstants.primary,
+        ),
+        onPressed: (){
+          Scaffold.of(context).openDrawer();
+        },
+      );
+    }
+
+    return IconButton(
+      icon: Icon(
+          widget.isExpanded ? Icons.chevron_left : Icons.chevron_right,
+          color: ColorConstants.primary),
+      onPressed: widget.onToggleMenu,
     );
   }
 }

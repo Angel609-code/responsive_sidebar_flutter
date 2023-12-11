@@ -1,13 +1,15 @@
+import 'dart:async';
+
 import 'package:animated_tree_view/animated_tree_view.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
-import 'package:sidebar_01/constants/color_constants.dart';
+import 'package:sidebar_01/blocs/Menu/menu_event.dart';
+import 'package:sidebar_01/blocs/Menu/menu_service.dart';
 
 import '../blocs/Menu/menu_bloc.dart';
-import '../blocs/Menu/menu_event.dart';
-import '../blocs/Menu/menu_service.dart';
 import '../blocs/Menu/menu_state.dart';
+import '../constants/color_constants.dart';
 import '../models/menu_model.dart';
 import '../utils/menu.dart';
 import 'custom_app_bar.dart';
@@ -22,9 +24,32 @@ class SidebarMenu extends StatefulWidget {
 class _SidebarMenuState extends State<SidebarMenu> {
   late TextEditingController _searchController;
 
-  bool expanded = true;
-  bool activatedHover = false;
-  List<bool> moduleExpanded = [];
+  bool expanded = false;
+  bool isMobile = false;
+  bool itWasClicked = false;
+  int positionedMenuItemIndexSelected = -1;
+  Timer? _debounceTimer;
+
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+
+  void toggleMenu() {
+    setState(() {
+      expanded = !expanded;
+      positionedMenuItemIndexSelected = -1;
+    });
+  }
+
+  void toogleItWasClicked([bool? value]) {
+    setState(() {
+      itWasClicked = value ?? !itWasClicked;
+    });
+  }
+
+  void togglePositionedMenuItem(int index) {
+    setState(() {
+      positionedMenuItemIndexSelected = index;
+    });
+  }
 
   @override
   void initState() {
@@ -32,36 +57,25 @@ class _SidebarMenuState extends State<SidebarMenu> {
     _searchController = TextEditingController();
   }
 
-  void toggleMenu() {
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    double screenSize = MediaQuery.of(context).size.width;
+
     setState(() {
-      moduleExpanded.clear();
-      expanded = !expanded;
+      isMobile = screenSize < 768;
     });
+
+    if (!isMobile) {
+      _scaffoldKey.currentState?.closeDrawer();
+    }
   }
 
-  void toggleModules([int? index, bool? isTap]) {
-    setState(
-      () {
-        // Cerrar cada modulo abierto que no corresponda con el elemento actual
-        for (var i = 0; i < moduleExpanded.length; i++) {
-          if (moduleExpanded[i] && i != index) {
-            moduleExpanded[i] = false;
-          }
-        }
-
-        if (index != null) {
-          if (moduleExpanded[index] && activatedHover && isTap != null && isTap) {
-            moduleExpanded[index] = false;
-            activatedHover = false;
-          } else if (isTap != null && isTap && !activatedHover) {
-            activatedHover = true;
-            moduleExpanded[index] = !moduleExpanded[index];
-          }else{
-            moduleExpanded[index] = !moduleExpanded[index];
-          }
-        }
-      },
-    );
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _debounceTimer?.cancel();
+    super.dispose();
   }
 
   @override
@@ -75,265 +89,116 @@ class _SidebarMenuState extends State<SidebarMenu> {
             )..add(
                 LoadMenuEvent(),
               ),
-          ),
+          )
         ],
-        child: BlocBuilder<MenuBloc, MenuState>(
-          builder: (context, state) {
-            if (state is MenuLoadingState) {
-              return Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    color: ColorConstants.secondaryText,
-                    width: expanded ? 260 : 50,
-                    child: Column(
-                      children: [
-                        _searchInput(context),
-                        // Sidebar menu widget
-                        Expanded(
-                          child: Container(
-                            color: ColorConstants.secondaryText,
-                            child: TreeView.simpleTyped<MenuModel,
-                                TreeNode<MenuModel>>(
-                              key: const Key('menuTree'),
-                              tree: TreeNode(),
-                              showRootNode: false,
-                              shrinkWrap: true,
-                              expansionBehavior:
-                                  ExpansionBehavior.collapseOthers,
-                              indentation: const Indentation(width: 0),
-                              expansionIndicatorBuilder: (context, node) {
-                                return ChevronIndicator.rightDown(
-                                  alignment: Alignment.centerRight,
-                                  tree: node,
-                                  color: Colors.white,
-                                  icon: Icons.arrow_right,
-                                );
-                              },
-                              onItemTap: (item) {},
-                              builder: (context, node) {
-                                return const Center(
-                                  child: CircularProgressIndicator(),
-                                );
-                              },
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Expanded(
-                    child: Stack(
-                      children: [
-                        Scaffold(
-                          appBar: CustomAppBar(
-                            isExpanded: expanded,
-                            onToggleMenu: toggleMenu,
-                          ),
-                          body: const Text('Data'),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              );
-            } else if (state is MenuSuccessState) {
-              TreeNode<MenuModel> menuTree = buildMenuTree(
-                state.menu,
-                state.filter,
-                state.node,
-              );
-
-              return Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    color: ColorConstants.secondaryText,
-                    width: expanded ? 260 : 50,
-                    child: Column(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (!isMobile) ...[
+              Container(
+                color: ColorConstants.secondaryText,
+                width: expanded ? 260 : 50,
+                child: BlocBuilder<MenuBloc, MenuState>(
+                  builder: (context, state) {
+                    return Column(
                       children: [
                         _searchInput(context, state),
-                        // Sidebar menu widget
                         Expanded(
-                          child: Container(
-                            color: ColorConstants.secondaryText,
-                            child: _paintMenu(context, state),
+                          child: SingleChildScrollView(
+                            child: expanded
+                                ? _animatedTreeView(context, state)
+                                : _sideMenuItems(context, state),
                           ),
                         ),
                       ],
-                    ),
-                  ),
-                  Expanded(
-                    child: Scaffold(
-                      appBar: CustomAppBar(
-                        isExpanded: expanded,
-                        onToggleMenu: toggleMenu,
-                      ),
-                      body: Stack(
-                        children: [
-                          GestureDetector(
-                            child: const Text('Data'),
-                            onTap: () {
-                              toggleModules();
-                            }
-                          ),
-                          ...List.generate(
-                            menuTree.children.length,
-                            (index) {
-                              try {
-                                moduleExpanded[index];
-                              } catch (e) {
-                                return const SizedBox();
-                              }
-
-                              TreeNode<MenuModel> currentNode =
-                                  menuTree.children.values.elementAt(index)
-                                      as TreeNode<MenuModel>;
-                                      
-                              final newRootNode = TreeNode<MenuModel>.root();
-                              newRootNode.add(currentNode);
-
-                              return Positioned(
-                                left: 0,
-                                top: 2 + (index * 50),
-                                child: AnimatedContainer(
-                                  alignment: Alignment.centerLeft,
-                                  duration: const Duration(milliseconds: 120),
-                                  padding: const EdgeInsets.symmetric(
-                                      vertical: 8.0, horizontal: 16.0),
-                                  width: moduleExpanded[index] ? 250 : 0,
-                                  decoration: const BoxDecoration(
-                                    color: ColorConstants.secondaryText,
-                                    borderRadius: BorderRadius.only(
-                                      topRight: Radius.circular(6.0),
-                                      bottomRight: Radius.circular(6.0),
-                                    ),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: Colors.black26,
-                                        offset: Offset(0, 2),
-                                        blurRadius: 4.0,
-                                        spreadRadius: 0.0,
-                                      ),
-                                    ],
-                                  ),
-                                  constraints: const BoxConstraints(
-                                    minHeight: 50,
-                                  ),
-                                  // Your popup content here
-                                  child: Container(
-                                    color: ColorConstants.secondaryText,
-                                    child: TreeView.simpleTyped<MenuModel,
-                                        TreeNode<MenuModel>>(
-                                      key: const Key('menuTree'),
-                                      tree: newRootNode,
-                                      showRootNode: false,
-                                      shrinkWrap: true,
-                                      expansionBehavior:
-                                          ExpansionBehavior.collapseOthers,
-                                      indentation: const Indentation(
-                                          width: 20,
-                                          color: Colors.transparent),
-                                      expansionIndicatorBuilder:
-                                          (context, node) {
-                                        return ChevronIndicator.rightDown(
-                                          alignment: Alignment.centerRight,
-                                          tree: node,
-                                          color: Colors.white,
-                                          icon: Icons.arrow_right,
-                                        );
-                                      },
-                                      onItemTap: (item) {
-                                        // if (item.data!.url != '/') {
-                                        //   toggleModules();
-                                        //   context.read<MenuBloc>().add(
-                                        //         LoadMenuEvent(
-                                        //           menu: state.menu,
-                                        //           currentNode: item.data!.id
-                                        //               .toString(),
-                                        //           filter: _searchController
-                                        //                       .text ==
-                                        //                   ''
-                                        //               ? false
-                                        //               : true,
-                                        //         ),
-                                        //       );
-                                        //   context.read<IframeBloc>().add(
-                                        //         IframeContentEvent(
-                                        //           path: item.data!.url,
-                                        //           isMigrated:
-                                        //               item.data!.migrated,
-                                        //         ),
-                                        //       );
-                                        // }
-                                      },
-                                      builder: (context, node) {
-                                        return Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            vertical: 8.0,
-                                          ),
-                                          color: ColorConstants.secondaryText,
-                                          width: 250,
-                                          child: Text(
-                                            node.data!.nombre,
-                                            style: const TextStyle(
-                                              color: Colors.white,
-                                              fontSize: 16,
-                                            ),
-                                            softWrap: true,
-                                          ),
-                                        );
-                                      },
-                                    ),
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              );
-            } else if (state is MenuErrorState) {
-              return const Center(
-                child: Text(
-                  'An error has occurred. Please try again later.',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 10,
-                  ),
+                    );
+                  },
                 ),
-              );
-            } else {
-              return const SizedBox.shrink();
-            }
-          },
+              ),
+            ],
+            Expanded(
+              child: Scaffold(
+                key: _scaffoldKey,
+                appBar: CustomAppBar(
+                  isExpanded: expanded,
+                  onToggleMenu: toggleMenu,
+                  isMobile: isMobile,
+                ),
+                drawer: isMobile
+                    ? Drawer(
+                        clipBehavior: Clip.none,
+                        child: BlocBuilder<MenuBloc, MenuState>(
+                          builder: (context, state) {
+                            return Container(
+                              color: ColorConstants.secondaryText,
+                              child: Column(
+                                children: [
+                                  _searchInput(context, state),
+                                  const SizedBox(
+                                    height: 10,
+                                  ),
+                                  Expanded(
+                                    child: _animatedTreeView(context, state),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                      )
+                    : null,
+                body: Stack(children: [
+                  Positioned.fill(
+                    child: GestureDetector(
+                      onTap: () {
+                        toogleItWasClicked(false);
+                        togglePositionedMenuItem(-1);
+                      },
+                      child: Container(
+                        color: Colors.transparent,
+                        child: const Center(
+                          child: Text('Data'),
+                        ),
+                      ),
+                    ),
+                  ),
+                  if (!isMobile) ...[
+                    BlocBuilder<MenuBloc, MenuState>(
+                      builder: (context, state) {
+                        return _stackedMenu(context, state);
+                      },
+                    ),
+                  ],
+                ]),
+              ),
+            )
+          ],
         ),
       ),
     );
   }
 
-  Container _searchInput(BuildContext context, [MenuSuccessState? state]) {
-    if (!expanded) {
+  Widget _searchInput(BuildContext context, MenuState state) {
+    if (!expanded && !isMobile) {
       return Container(
-          color: ColorConstants.secondaryText,
-          width: 50,
-          height: 50,
-          child: IconButton(
-            icon: const Icon(
-              Icons.search,
-              color: Colors.white,
-            ),
-            onPressed: () {
-              toggleMenu();
-            },
-          ));
+        color: ColorConstants.secondaryText,
+        width: 50,
+        height: 50,
+        child: IconButton(
+          icon: const Icon(
+            Icons.search,
+            color: Colors.white,
+          ),
+          onPressed: () {
+            toggleMenu();
+          },
+        ),
+      );
     }
+
     return Container(
       color: ColorConstants.secondaryText,
-      width: 250,
+      width: isMobile ? 290 : 250,
       height: 50,
       child: Padding(
         padding: const EdgeInsets.only(
@@ -345,30 +210,36 @@ class _SidebarMenuState extends State<SidebarMenu> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            TextField(
-              style: const TextStyle(
-                color: Colors.white,
-              ),
-              decoration: const InputDecoration(
-                hintText: 'Búsqueda de pantallas',
-                hintStyle: TextStyle(color: Colors.white30),
-                suffixIcon: Icon(
-                  Icons.search,
+            Material(
+              color: ColorConstants.secondaryText,
+              child: TextField(
+                style: const TextStyle(
                   color: Colors.white,
                 ),
+                decoration: const InputDecoration(
+                  hintText: 'Búsqueda de pantallas',
+                  hintStyle: TextStyle(color: Colors.white30),
+                  suffixIcon: Icon(
+                    Icons.search,
+                    color: Colors.white,
+                  ),
+                ),
+                onChanged: (value) {
+                  if (_debounceTimer?.isActive ?? false) {
+                    _debounceTimer?.cancel();
+                  }
+                  _debounceTimer = Timer(const Duration(milliseconds: 550), () {
+                    context.read<MenuBloc>().add(
+                          UpdateMenuEvent(
+                            (state is MenuSuccessState) ? state.menu : const [],
+                            value,
+                            filter: value == '' ? false : true,
+                          ),
+                        );
+                  });
+                },
+                controller: _searchController,
               ),
-              onSubmitted: (value) {
-                if (state != null) {
-                  context.read<MenuBloc>().add(
-                        UpdateMenuEvent(
-                          state.menu,
-                          value,
-                          filter: value == '' ? false : true,
-                        ),
-                      );
-                }
-              },
-              controller: _searchController,
             ),
           ],
         ),
@@ -376,56 +247,7 @@ class _SidebarMenuState extends State<SidebarMenu> {
     );
   }
 
-  Widget _paintMenu(BuildContext ctx, MenuSuccessState state) {
-    if (!expanded) {
-      TreeNode<MenuModel> menuTree = buildMenuTree(
-        state.menu,
-        state.filter,
-        state.node,
-      );
-
-      return Container(
-        color: ColorConstants.secondaryText,
-        child: ListView.builder(
-          itemCount: menuTree.children.length,
-          itemBuilder: (context, index) {
-            try {
-              moduleExpanded[index];
-            } catch (e) {
-              moduleExpanded.add(false);
-            }
-
-            return Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(6.0),
-                  width: 44,
-                  height: 50,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(6.0),
-                    color: moduleExpanded[index] ? ColorConstants.tertiaryGrayColor : Colors.transparent,
-                  ),
-                  child: InkWell(
-                    child: const Icon(
-                      Icons.pages,
-                      color: Colors.white,
-                    ),
-                    onTap: () {
-                      toggleModules(index, true);
-                    },
-                    onHover: (value){
-                      if(value && activatedHover) toggleModules(index);
-                    },
-                  ),
-                ),
-              ],
-            );
-          },
-        ),
-      );
-    }
-
+  Widget _paintMenu(BuildContext context, MenuSuccessState state) {
     return TreeView.simpleTyped<MenuModel, TreeNode<MenuModel>>(
       key: const Key('menuTree'),
       tree: buildMenuTree(
@@ -435,7 +257,7 @@ class _SidebarMenuState extends State<SidebarMenu> {
       ),
       showRootNode: false,
       shrinkWrap: true,
-      expansionBehavior: ExpansionBehavior.collapseOthers,
+      expansionBehavior: ExpansionBehavior.collapseOthersAndSnapToTop,
       indentation: const Indentation(width: 0),
       expansionIndicatorBuilder: (context, node) {
         return ChevronIndicator.rightDown(
@@ -447,19 +269,15 @@ class _SidebarMenuState extends State<SidebarMenu> {
       },
       onItemTap: (item) {
         if (item.data!.url != '/') {
-          ctx.read<MenuBloc>().add(
+          context.read<MenuBloc>().add(
                 LoadMenuEvent(
                   menu: state.menu,
                   currentNode: item.data!.id.toString(),
                   filter: _searchController.text == '' ? false : true,
                 ),
               );
-          // ctx.read<IframeBloc>().add(
-          //       IframeContentEvent(
-          //         path: item.data!.url,
-          //         isMigrated: item.data!.migrated,
-          //       ),
-          //     );
+
+          if (isMobile) Scaffold.of(context).closeDrawer();
         }
       },
       builder: (context, node) {
@@ -474,26 +292,33 @@ class _SidebarMenuState extends State<SidebarMenu> {
                 : ColorConstants.secondaryText,
             height: 42,
             // Padding between one menu and another.
-            width: expanded ? 260 : 50,
+            width: isMobile
+                ? null
+                : expanded
+                    ? 260
+                    : 50,
             alignment: Alignment.center,
             child: Padding(
-              padding: node.level == 2
-                  ? const EdgeInsets.only(
-                      left: 30,
+              padding: node.level == 1
+                  ? EdgeInsets.symmetric(
+                      horizontal: isMobile ? 10.0 : 0.0,
+                      vertical: isMobile ? 2.0 : 0.0,
                     )
-                  : node.level == 3
-                      ? const EdgeInsets.only(
-                          left: 35,
+                  : node.level == 2
+                      ? EdgeInsets.only(
+                          left: 30,
+                          right: isMobile ? 20.0 : 0.0,
                         )
-                      : node.level >= 4
-                          ? const EdgeInsets.only(
-                              left: 40,
-                            )
-                          : const EdgeInsets.only(
-                              left: 0,
-                            ),
+                      : node.level == 3
+                          ? EdgeInsets.only(
+                              left: 35, right: isMobile ? 20.0 : 0.0)
+                          : node.level >= 4
+                              ? EdgeInsets.only(
+                                  left: 40, right: isMobile ? 20.0 : 0.0)
+                              : EdgeInsets.only(
+                                  left: 0, right: isMobile ? 20.0 : 0.0),
               child: Container(
-                width: 260,
+                width: isMobile ? null : 260,
                 height: 45,
                 alignment: Alignment.centerLeft,
                 decoration: BoxDecoration(
@@ -502,11 +327,16 @@ class _SidebarMenuState extends State<SidebarMenu> {
                           ? ColorConstants.primary
                           : null
                       : null,
+                  borderRadius: isMobile
+                      ? isSelected
+                          ? node.isLeaf
+                              ? BorderRadius.circular(5)
+                              : null
+                          : null
+                      : null,
                 ),
                 child: Padding(
-                  padding: const EdgeInsets.only(
-                    left: 10,
-                  ),
+                  padding: const EdgeInsets.only(left: 10),
                   child: node.level >= 2
                       ? Text(
                           node.data!.nombre,
@@ -527,7 +357,7 @@ class _SidebarMenuState extends State<SidebarMenu> {
                             const SizedBox(
                               width: 6,
                             ),
-                            expanded
+                            expanded || isMobile
                                 ? SizedBox(
                                     width: 200,
                                     child: Text(
@@ -539,7 +369,7 @@ class _SidebarMenuState extends State<SidebarMenu> {
                                       softWrap: true,
                                     ),
                                   )
-                                : Container()
+                                : Container(),
                           ],
                         ),
                 ),
@@ -548,6 +378,361 @@ class _SidebarMenuState extends State<SidebarMenu> {
           ),
         );
       },
+    );
+  }
+
+  Widget _animatedTreeView(BuildContext context, MenuState state) {
+    if (state is MenuSuccessState) {
+      if (state.menu.isNotEmpty) {
+        return _paintMenu(context, state);
+      }
+
+      return const Center(
+        child: Text(
+          'No se encontraron resultados',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 16,
+          ),
+        ),
+      );
+    }
+
+    if (state is MenuErrorState) {
+      return const Center(
+        child: Text(
+          'Ocurrió un error al cargar el menú',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 16,
+          ),
+        ),
+      );
+    }
+
+    return const Center(
+      child: CircularProgressIndicator(),
+    );
+  }
+
+  Widget _sideMenuItems(BuildContext context, MenuState state) {
+    if (state is MenuSuccessState) {
+      if (state.menu.isEmpty) {
+        return Container();
+      }
+
+      TreeNode<MenuModel> treeMenu = buildMenuTree(
+        state.menu,
+        state.filter,
+        state.node,
+      );
+
+      return Column(
+        mainAxisAlignment: MainAxisAlignment.start,
+        children: List.generate(
+            treeMenu.children.values.length,
+            (index) => Container(
+                  padding: const EdgeInsets.all(6.0),
+                  width: 44,
+                  height: 50,
+                  decoration: const BoxDecoration(
+                    color: ColorConstants.secondaryText,
+                  ),
+                  child: _sideMenuItem(
+                      context,
+                      treeMenu.children.values.elementAt(index)
+                          as TreeNode<MenuModel>,
+                      index),
+                )),
+
+        // [
+        //   ...treeMenu.children.values.map((node) => Container(
+        //       padding: const EdgeInsets.all(6.0),
+        //       width: 44,
+        //       height: 50,
+        //       decoration: const BoxDecoration(
+        //         color: ColorConstants.secondaryText,
+        //       ),
+        //       child: _sideMenuItem(context, node as TreeNode<MenuModel>),
+        //     )
+        //   ),
+        //   for (var node in treeMenu.children.values)
+        //     Container(
+        //       padding: const EdgeInsets.all(6.0),
+        //       width: 44,
+        //       height: 50,
+        //       decoration: const BoxDecoration(
+        //         color: ColorConstants.secondaryText,
+        //       ),
+        //       child: _sideMenuItem(context, node as TreeNode<MenuModel>),
+        //     )
+        // ],
+      );
+    }
+
+    return Container();
+  }
+
+  Widget _sideMenuItem(
+      BuildContext context, TreeNode<MenuModel> node, int index) {
+    return Material(
+      color: ColorConstants.secondaryText,
+      child: Container(
+        decoration: BoxDecoration(
+          color: (positionedMenuItemIndexSelected == index)
+              ? ColorConstants.tertiaryGrayColor
+              : ColorConstants.secondaryText,
+          borderRadius: BorderRadius.circular(6.0),
+        ),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(6.0),
+          child: const Icon(
+            Icons.pages,
+            color: Colors.white,
+          ),
+          onTap: () {
+            toogleItWasClicked();
+            togglePositionedMenuItem(itWasClicked ? index : -1);
+          },
+          onHover: (hovered) {
+            if (hovered && itWasClicked) {
+              togglePositionedMenuItem(index);
+            }
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _stackedMenu(BuildContext context, MenuState state) {
+    if (state is MenuSuccessState) {
+      if (state.menu.isEmpty) {
+        return Container();
+      }
+
+      TreeNode<MenuModel> treeMenu = buildMenuTree(
+        state.menu,
+        state.filter,
+        state.node,
+      );
+
+      return Stack(
+        children: [
+          ...List.generate(
+            treeMenu.children.length,
+            (index) {
+              var currentNode = treeMenu.children.values.elementAt(index)
+                  as TreeNode<MenuModel>;
+
+              return _PositionedTreeView(
+                index: index,
+                currentSelectedIndex: positionedMenuItemIndexSelected,
+                currentNode: currentNode,
+                menu: state.menu,
+                searchText: _searchController.text,
+                node: state.node,
+              );
+            },
+          ),
+        ],
+      );
+    }
+
+    return Container();
+  }
+}
+
+class _PositionedTreeView extends StatefulWidget {
+  const _PositionedTreeView({
+    required this.index,
+    required this.currentSelectedIndex,
+    required this.currentNode,
+    required this.menu,
+    required this.searchText,
+    required this.node,
+  });
+
+  final int index;
+  final int currentSelectedIndex;
+  final TreeNode<MenuModel> currentNode;
+  final List<MenuModel> menu;
+  final String searchText;
+  final String node;
+
+  @override
+  State<_PositionedTreeView> createState() => _PositionedTreeViewState();
+}
+
+class _PositionedTreeViewState extends State<_PositionedTreeView> {
+  bool isExpanded = false;
+
+  @override
+  void didUpdateWidget(_PositionedTreeView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    isExpanded = widget.currentSelectedIndex == widget.index;
+  }
+
+  void togglePopup() {
+    setState(() {
+      isExpanded = !isExpanded;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    TreeNode<MenuModel> newRootNode = TreeNode<MenuModel>.root();
+    double widgetSize = 60.0;
+    double currentYPosition = widget.index * 50.0 + 2;
+    double maxHeight = MediaQuery.of(context).size.height;
+    double widgetWidth = 250;
+
+    if (!widget.currentNode.isLeaf) {
+      for (var element in widget.currentNode.children.values) {
+        newRootNode.add(element);
+      }
+      widgetSize = widget.currentNode.children.length * 55.0;
+    }
+
+    if (widget.currentSelectedIndex == widget.index) {
+      if (widgetSize > maxHeight - 52) {
+        widgetSize = maxHeight - 82.0;
+      }
+
+      if (currentYPosition + widgetSize > maxHeight) {
+        currentYPosition = maxHeight - widgetSize - 52;
+      }
+    }
+
+    return Positioned(
+      top: currentYPosition,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 300),
+        padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 15.0),
+        width: isExpanded ? widgetWidth : 0,
+        height: isExpanded ? widgetSize : 0,
+        alignment: Alignment.centerLeft,
+        clipBehavior: Clip.hardEdge,
+        decoration: const BoxDecoration(
+          color: ColorConstants.secondaryText,
+          borderRadius: BorderRadius.only(
+            topRight: Radius.circular(4.0),
+            bottomRight: Radius.circular(4.0),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black12,
+              blurRadius: 5,
+              offset: Offset(0, 2),
+            ),
+          ],
+        ),
+        constraints: BoxConstraints(
+          minWidth: widgetWidth,
+          maxWidth: widgetWidth,
+        ),
+        child: widget.currentNode.isLeaf
+            ? SizedBox(
+                width: widgetWidth,
+                child: InkWell(
+                  onTap: () {
+                    context.read<MenuBloc>().add(
+                          LoadMenuEvent(
+                            menu: widget.menu,
+                            currentNode: widget.currentNode.data!.id.toString(),
+                            filter: widget.searchText == '' ? false : true,
+                          ),
+                        );
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10.0,
+                    ),
+                    width: widgetWidth,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(4.0),
+                      color: widget.node == widget.currentNode.key
+                          ? ColorConstants.primary
+                          : ColorConstants.secondaryText,
+                    ),
+                    constraints: const BoxConstraints(
+                      minHeight: 50,
+                    ),
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      widget.currentNode.data!.nombre,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                      ),
+                      softWrap: true,
+                    ),
+                  ),
+                ),
+              )
+            : ScrollbarTheme(
+                data: ScrollbarThemeData(
+                  thumbColor: MaterialStateProperty.all<Color>(
+                    Colors.white.withOpacity(0.5),
+                  ),
+                ),
+                child: TreeView.simpleTyped<MenuModel, TreeNode<MenuModel>>(
+                  tree: newRootNode,
+                  showRootNode: false,
+                  shrinkWrap: true,
+                  expansionBehavior:
+                      ExpansionBehavior.collapseOthersAndSnapToTop,
+                  indentation:
+                      const Indentation(width: 20.0, color: Colors.transparent),
+                  expansionIndicatorBuilder: (context, node) {
+                    return ChevronIndicator.rightDown(
+                      alignment: Alignment.centerRight,
+                      tree: node,
+                      color: Colors.white,
+                      icon: Icons.arrow_right,
+                    );
+                  },
+                  onItemTap: (item) {
+                    if (item.data!.url != '/') {
+                      context.read<MenuBloc>().add(
+                            LoadMenuEvent(
+                              menu: widget.menu,
+                              currentNode: item.data!.id.toString(),
+                              filter: widget.searchText == '' ? false : true,
+                            ),
+                          );
+                    }
+                  },
+                  builder: (context, node) {
+                    return Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12.0,
+                      ),
+                      width: widgetWidth,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(4.0),
+                        color: widget.node == node.key
+                            ? ColorConstants.primary
+                            : node.isExpanded ?
+                            ColorConstants.tertiaryGrayColor
+                            :ColorConstants.secondaryText,
+                      ),
+                      constraints: const BoxConstraints(
+                        minHeight: 50,
+                      ),
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        node.data!.nombre,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                        ),
+                        softWrap: true,
+                      ),
+                    );
+                  },
+                ),
+              ),
+      ),
     );
   }
 }

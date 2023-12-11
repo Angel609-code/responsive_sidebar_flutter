@@ -1,7 +1,8 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:sidebar_01/widgets/sidebar.dart';
+
+import 'widgets/sidebar.dart';
 
 void main() {
   HttpOverrides.global = MyHttpOverrides();
